@@ -74,12 +74,12 @@ namespace com.andycodesstuff {
 
       public void Execute(int index) {
         var axisIncrement = (float) gridSize / (samplesPerAxis - 1);
-        var point = To3D(index, samplesPerAxis, gridOffset) * axisIncrement;
+        var point = To3D(index, samplesPerAxis) * axisIncrement + gridOffset;
 
         // Skip the corners of the array as those are already processed by previous cube
         // (due to the fact that each cube has to process the neighbouring ones)
         var idx = point - gridOffset;
-        if (idx.x >= gridSize - axisIncrement || idx.y >= gridSize - axisIncrement || idx.z >= gridSize - axisIncrement) return;
+        if (idx.x >= gridSize || idx.y >= gridSize || idx.z >= gridSize) return;
 
         // Neighbouring points
         var point0 = point;
@@ -92,14 +92,14 @@ namespace com.andycodesstuff {
         var point7 = point + new Vector3(            0, axisIncrement, axisIncrement);
 
         // Neighbouring density samples
-        var density0 = density[To1D(point0 / axisIncrement, samplesPerAxis, gridOffset)];
-        var density1 = density[To1D(point1 / axisIncrement, samplesPerAxis, gridOffset)];
-        var density2 = density[To1D(point2 / axisIncrement, samplesPerAxis, gridOffset)];
-        var density3 = density[To1D(point3 / axisIncrement, samplesPerAxis, gridOffset)];
-        var density4 = density[To1D(point4 / axisIncrement, samplesPerAxis, gridOffset)];
-        var density5 = density[To1D(point5 / axisIncrement, samplesPerAxis, gridOffset)];
-        var density6 = density[To1D(point6 / axisIncrement, samplesPerAxis, gridOffset)];
-        var density7 = density[To1D(point7 / axisIncrement, samplesPerAxis, gridOffset)];
+        var density0 = density[To1D((point0 - gridOffset) / axisIncrement, samplesPerAxis)];
+        var density1 = density[To1D((point1 - gridOffset) / axisIncrement, samplesPerAxis)];
+        var density2 = density[To1D((point2 - gridOffset) / axisIncrement, samplesPerAxis)];
+        var density3 = density[To1D((point3 - gridOffset) / axisIncrement, samplesPerAxis)];
+        var density4 = density[To1D((point4 - gridOffset) / axisIncrement, samplesPerAxis)];
+        var density5 = density[To1D((point5 - gridOffset) / axisIncrement, samplesPerAxis)];
+        var density6 = density[To1D((point6 - gridOffset) / axisIncrement, samplesPerAxis)];
+        var density7 = density[To1D((point7 - gridOffset) / axisIncrement, samplesPerAxis)];
 
         // Find the index of the entry that corresponds to the given cube
         var cubeIndex = 0;
@@ -209,21 +209,19 @@ namespace com.andycodesstuff {
     /// <summary>
     ///   Convert a point (3D value) to its index in the density array (1D value)
     /// </summary>
-    private static int To1D(Vector3 point, int samplesPerAxis, Vector3 gridOffset) {
-      point -= gridOffset;
-      return (int) point.x * samplesPerAxis * samplesPerAxis + (int) point.y * samplesPerAxis + (int) point.z;
+    private static int To1D(Vector3 point, int samplesPerAxis) {
+      return Mathf.RoundToInt(point.x * samplesPerAxis * samplesPerAxis + point.y * samplesPerAxis + point.z);
     }
 
     /// <summary>
     ///   Convert a density array index (1D value) to its corresponding point in space (3D value)
     /// </summary>
-    private static Vector3 To3D(int index, int samplesPerAxis, Vector3 gridOffset) {
+    private static Vector3 To3D(int index, int samplesPerAxis) {
       var x = index / (samplesPerAxis * samplesPerAxis);
       var y = (index - x * samplesPerAxis * samplesPerAxis) / samplesPerAxis;
       var z = index - x * samplesPerAxis * samplesPerAxis - y * samplesPerAxis;
 
-      var point = new Vector3(x, y, z);
-      return point + gridOffset;
+      return new Vector3(x, y, z);
     }
     
     /// <summary>
