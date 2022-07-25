@@ -5,22 +5,41 @@ using Unity.Burst;
 
 namespace com.andycodesstuff {
   /// <summary>
-  ///   Sources:
-  ///    - https://github.com/SebLague/Marching-Cubes
-  ///    - https://github.com/Scrawk/Marching-Cubes
-  ///    - https://github.com/nezix/MarchingCubesBurst
-  ///    - http://paulbourke.net/geometry/polygonise/
+  ///   A fast, multi-threaded, Burst compiled marching cubes implementation for Unity. Based on the following sources:
+  ///   <list type="bullet">
+  ///     <item>https://github.com/SebLague/Marching-Cubes</item>
+  ///     <item>https://github.com/Scrawk/Marching-Cubes</item>
+  ///     <item>https://github.com/nezix/MarchingCubesBurst</item>
+  ///     <item>http://paulbourke.net/geometry/polygonise/</item>
+  ///   </list>
   /// </summary>
   public class MarchingCubes {
     private NativeArray<int> m_NativeTriangulationTable;
 
+    /// <summary>
+    ///   Initialise the object and pre-compute commonly used values
+    /// </summary>
     public MarchingCubes() {
       m_NativeTriangulationTable = new NativeArray<int>(TRIS_CONFIGS * CONFIG_ENTRIES, Allocator.Persistent);
-      ConvertTriangulationTable();
+
+      // Convert the standard marching cubes' triangulation table to its native array equivalent to make it accessible
+      // to the job system
+      for (var i = 0; i < TRIS_CONFIGS; i++) {
+        for (var j = 0; j < CONFIG_ENTRIES; j++) {
+          m_NativeTriangulationTable[j + i * CONFIG_ENTRIES] = TRIANGULATION_TABLE[i, j];
+        }
+      }
     }
 
     /// <summary>
-    ///   Runs the marching cubes algorithm on the given data
+    ///   Free native containers' allocations
+    /// </summary>
+    public void Clean() {
+      if (m_NativeTriangulationTable.IsCreated) m_NativeTriangulationTable.Dispose();
+    }
+
+    /// <summary>
+    ///   Run the marching cube algorithm and generate the resulting tessellation
     /// </summary>
     public NativeQueue<Triangle> Generate(float[] density, float surfaceLevel, int samplesPerAxis, int gridSize, Vector3 gridOffset) {
       var totalSize = density.Length;
@@ -52,10 +71,30 @@ namespace com.andycodesstuff {
     }
 
     /// <summary>
-    ///   Free native containers' allocations
+    ///   Convert a point (3D value) to its index in the density array (1D value)
     /// </summary>
-    public void Clean() {
-      if (m_NativeTriangulationTable.IsCreated) m_NativeTriangulationTable.Dispose();
+    public static int To1D(Vector3 point, int samplesPerAxis) {
+      return Mathf.RoundToInt(point.x * samplesPerAxis * samplesPerAxis + point.y * samplesPerAxis + point.z);
+    }
+
+    /// <summary>
+    ///   Convert a density array index (1D value) to its corresponding point in space (3D value)
+    /// </summary>
+    public static Vector3 To3D(int index, int samplesPerAxis) {
+      var x = index / (samplesPerAxis * samplesPerAxis);
+      var y = (index - x * samplesPerAxis * samplesPerAxis) / samplesPerAxis;
+      var z = index - x * samplesPerAxis * samplesPerAxis - y * samplesPerAxis;
+
+      return new Vector3(x, y, z);
+    }
+
+    /// <summary>
+    ///   Represent a single triangle produced by the marching cubes algorithm
+    /// </summary>
+    public struct Triangle {
+      public Vector3 vertexA;
+      public Vector3 vertexB;
+      public Vector3 vertexC;
     }
 
     /// <summary>
@@ -188,42 +227,13 @@ namespace com.andycodesstuff {
     }
 
     /// <summary>
-    ///		Convert the marching cubes' triangulation table to a native array
-    /// </summary>
-    private void ConvertTriangulationTable() {
-      for (var i = 0; i < TRIS_CONFIGS; i++) {
-        for (var j = 0; j < CONFIG_ENTRIES; j++) {
-          m_NativeTriangulationTable[j + i * CONFIG_ENTRIES] = TriangulationTable[i, j];
-        }
-      }
-    }
-
-    /// <summary>
     ///   Interpolate between two density samples to yield a smoother result
     /// </summary>
     private static Vector3 Interpolate(float surfaceLevel, Vector3 pointA, Vector3 pointB, float densityA, float densityB) {
       var t = (surfaceLevel - densityA) / (densityB - densityA);
       return pointA + t * (pointB - pointA);
     }
-    
-    /// <summary>
-    ///   Convert a point (3D value) to its index in the density array (1D value)
-    /// </summary>
-    private static int To1D(Vector3 point, int samplesPerAxis) {
-      return Mathf.RoundToInt(point.x * samplesPerAxis * samplesPerAxis + point.y * samplesPerAxis + point.z);
-    }
 
-    /// <summary>
-    ///   Convert a density array index (1D value) to its corresponding point in space (3D value)
-    /// </summary>
-    private static Vector3 To3D(int index, int samplesPerAxis) {
-      var x = index / (samplesPerAxis * samplesPerAxis);
-      var y = (index - x * samplesPerAxis * samplesPerAxis) / samplesPerAxis;
-      var z = index - x * samplesPerAxis * samplesPerAxis - y * samplesPerAxis;
-
-      return new Vector3(x, y, z);
-    }
-    
     /// <summary>
     ///   Convert a boolean expression to an integer, true expressions evaluate to 1 while false ones evaluate to 0
     /// </summary>
@@ -231,12 +241,12 @@ namespace com.andycodesstuff {
 
     /// <summary>
     ///   For each of the possible vertex states there is a specific triangulation of the edge intersection points.
-    ///   TriangleConnectionTable lists all of them in the form of 0-5 edge triples with the list terminated by
-    ///   the invalid value -1.
+    ///   <c>TRIANGULATION_TABLE</c> lists all of them in the form of edge triples with the list terminated by the
+    ///   invalid value -1
     /// </summary>
     private const int TRIS_CONFIGS = 256;
     private const int CONFIG_ENTRIES = 16;
-    private static readonly int[,] TriangulationTable = {
+    private static readonly int[,] TRIANGULATION_TABLE = {
       {-1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1},
       {0, 8, 3, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1},
       {0, 1, 9, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1},
@@ -494,11 +504,5 @@ namespace com.andycodesstuff {
       {0, 3, 8, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1},
       {-1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1}
     };
-    
-    public struct Triangle {
-      public Vector3 vertexA;
-      public Vector3 vertexB;
-      public Vector3 vertexC;
-    }
   }
 }
