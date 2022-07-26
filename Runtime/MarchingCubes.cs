@@ -41,7 +41,7 @@ namespace com.andycodesstuff {
     /// <summary>
     ///   Run the marching cube algorithm and generate the resulting polygonisation
     /// </summary>
-    public NativeQueue<Triangle> Polygonise(float[] density, float surfaceLevel, int gridSize, Vector3 gridOffset) {
+    public NativeQueue<Triangle> Polygonise(float[] density, float surfaceLevel, int gridSize) {
       // Compute the total number of density samples as well as the number of samples along each axis: since the
       // <c>density</c> array represents a cube, a 3D array with dimensions all equal, we can just take the cube root
       var samples = density.Length;
@@ -58,7 +58,6 @@ namespace com.andycodesstuff {
         surfaceLevel = surfaceLevel,
         samplesPerAxis = samplesPerAxis,
         gridSize = gridSize,
-        gridOffset = gridOffset,
         triangles = nativeTriangles.AsParallelWriter()
       };
 
@@ -110,18 +109,16 @@ namespace com.andycodesstuff {
       [ReadOnly] public float surfaceLevel;
       [ReadOnly] public int samplesPerAxis;
       [ReadOnly] public int gridSize;
-      [ReadOnly] public Vector3 gridOffset;
 
       [WriteOnly] public NativeQueue<Triangle>.ParallelWriter triangles;
 
       public void Execute(int index) {
         var axisIncrement = (float) gridSize / (samplesPerAxis - 1);
-        var point = To3D(index, samplesPerAxis) * axisIncrement + gridOffset;
+        var point = To3D(index, samplesPerAxis) * axisIncrement;
 
         // Skip the corners of the array as those are already processed by previous cube
         // (due to the fact that each cube has to process the neighbouring ones)
-        var idx = point - gridOffset;
-        if (idx.x >= gridSize || idx.y >= gridSize || idx.z >= gridSize) return;
+        if (point.x >= gridSize || point.y >= gridSize || point.z >= gridSize) return;
 
         // Neighbouring points
         var point0 = point;
@@ -134,14 +131,14 @@ namespace com.andycodesstuff {
         var point7 = point + new Vector3(            0, axisIncrement, axisIncrement);
 
         // Neighbouring density samples
-        var density0 = density[To1D((point0 - gridOffset) / axisIncrement, samplesPerAxis)];
-        var density1 = density[To1D((point1 - gridOffset) / axisIncrement, samplesPerAxis)];
-        var density2 = density[To1D((point2 - gridOffset) / axisIncrement, samplesPerAxis)];
-        var density3 = density[To1D((point3 - gridOffset) / axisIncrement, samplesPerAxis)];
-        var density4 = density[To1D((point4 - gridOffset) / axisIncrement, samplesPerAxis)];
-        var density5 = density[To1D((point5 - gridOffset) / axisIncrement, samplesPerAxis)];
-        var density6 = density[To1D((point6 - gridOffset) / axisIncrement, samplesPerAxis)];
-        var density7 = density[To1D((point7 - gridOffset) / axisIncrement, samplesPerAxis)];
+        var density0 = density[To1D(point0 / axisIncrement, samplesPerAxis)];
+        var density1 = density[To1D(point1 / axisIncrement, samplesPerAxis)];
+        var density2 = density[To1D(point2 / axisIncrement, samplesPerAxis)];
+        var density3 = density[To1D(point3 / axisIncrement, samplesPerAxis)];
+        var density4 = density[To1D(point4 / axisIncrement, samplesPerAxis)];
+        var density5 = density[To1D(point5 / axisIncrement, samplesPerAxis)];
+        var density6 = density[To1D(point6 / axisIncrement, samplesPerAxis)];
+        var density7 = density[To1D(point7 / axisIncrement, samplesPerAxis)];
 
         // Find the index of the entry that corresponds to the given cube
         var cubeIndex = 0;
