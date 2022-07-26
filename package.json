@@ -3,7 +3,8 @@
   "version": "1.0.0",
   "displayName": "Marching cubes",
   "description": "A fast, multi-threaded, Burst compiled marching cubes implementation for Unity",
-  "unity": "2019.1",
+  "unity": "2020.3",
+  "unityRelease": "17f1",
   "keywords": [
     "marching cubes",
     "unity",
@@ -11,12 +12,12 @@
     "job system"
   ],
   "dependencies": {
-    "com.unity.burst": "1.4.3",
-    "com.unity.collections": "0.9.0-preview.6"
+    "com.unity.burst": "1.7.3",
+    "com.unity.collections": "1.3.1"
   },
   "type": "library",
   "author": {
-    "name": "Andrea Busà",
+    "name": "andycodesstuff",
     "url": "https://github.com/andycodesstuff"
   }
 }
