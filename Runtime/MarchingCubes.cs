@@ -39,14 +39,17 @@ namespace com.andycodesstuff {
     }
 
     /// <summary>
-    ///   Run the marching cube algorithm and generate the resulting tessellation
+    ///   Run the marching cube algorithm and generate the resulting polygonisation
     /// </summary>
-    public NativeQueue<Triangle> Generate(float[] density, float surfaceLevel, int samplesPerAxis, int gridSize, Vector3 gridOffset) {
-      var totalSize = density.Length;
-      var nativeDensity = new NativeArray<float>(totalSize, Allocator.TempJob);
-      var nativeTriangles = new NativeQueue<Triangle>(Allocator.Persistent);
+    public NativeQueue<Triangle> Polygonise(float[] density, float surfaceLevel, int gridSize, Vector3 gridOffset) {
+      // Compute the total number of density samples as well as the number of samples along each axis: since the
+      // <c>density</c> array represents a cube, a 3D array with dimensions all equal, we can just take the cube root
+      var samples = density.Length;
+      var samplesPerAxis = (int) Mathf.Pow(samples, 1f / 3f);
 
-      // Prepare the job system to tessellate the given data
+      // Prepare the job system to polygonise the given data
+      var nativeDensity = new NativeArray<float>(samples, Allocator.TempJob);
+      var nativeTriangles = new NativeQueue<Triangle>(Allocator.Persistent);
       nativeDensity.CopyFrom(density);
 
       var marchJob = new MarchJob {
@@ -59,8 +62,8 @@ namespace com.andycodesstuff {
         triangles = nativeTriangles.AsParallelWriter()
       };
 
-      // Tessellate the given data
-      var jobHandle = marchJob.Schedule(totalSize, 1);
+      // Polygonise the given data
+      var jobHandle = marchJob.Schedule(samples, 1);
       jobHandle.Complete();
 
       // Dispose native containers
