@@ -39,19 +39,23 @@ namespace com.andycodesstuff {
     }
 
     /// <summary>
-    ///   Run the marching cube algorithm and generate the resulting polygonisation
+    ///   Run the marching cube algorithm and return the resulting polygonisation
     /// </summary>
-    public NativeQueue<Triangle> Polygonise(float[] density, float surfaceLevel, float gridSize) {
+    public Triangle[] Polygonise(float[] density, float surfaceLevel, float gridSize) {
       // Compute the total number of density samples as well as the number of samples along each axis: since the
       // <c>density</c> array represents a cube, a 3D array with dimensions all equal, we can just take the cube root
       var samples = density.Length;
       var samplesPerAxis = (int) Mathf.Pow(samples, 1f / 3f);
 
-      // Prepare the job system to polygonise the given data
       var nativeDensity = new NativeArray<float>(samples, Allocator.TempJob);
-      var nativeTriangles = new NativeQueue<Triangle>(Allocator.Persistent);
       nativeDensity.CopyFrom(density);
 
+      // Compute the maximum number of triangles that could theoretically be produced from the given data (each cube/
+      // density sample can produce up to 5 distinct triangles, therefore we multiply the number of samples by 5)
+      var maxTriangles = samples * 5;
+      var nativeTriangles = new NativeList<Triangle>(maxTriangles, Allocator.Persistent);
+
+      // Prepare the job system to polygonise the given data
       var marchJob = new MarchJob {
         triangulationTable = m_NativeTriangulationTable,
         density = nativeDensity,
@@ -66,11 +70,20 @@ namespace com.andycodesstuff {
       var jobHandle = marchJob.Schedule(samples, 1);
       jobHandle.Complete();
 
+      // Copy the results to a managed array.
+      // 
+      // NOTE: Although the performance of the marching cubes algorithm does not benefit from this strategy (indeed, it
+      //       adds a small overhead), when the generated triangles need to be used elsewhere (to generate a mesh, for
+      //       example), accessing elements from a <c>NativeArray</c> or <c>NativeList</c> is substantially slower than
+      //       copying its content to a managed array and accessing the latter
+      var triangles = nativeTriangles.ToArray();
+
       // Dispose native containers
       nativeDensity.Dispose();
+      nativeTriangles.Dispose();
 
       // Return generated triangles
-      return nativeTriangles;
+      return triangles;
     }
 
     /// <summary>
@@ -112,7 +125,7 @@ namespace com.andycodesstuff {
       [ReadOnly] public float gridSize;
       [ReadOnly] public float cornerCoords;
 
-      [WriteOnly] public NativeQueue<Triangle>.ParallelWriter triangles;
+      [WriteOnly] public NativeList<Triangle>.ParallelWriter triangles;
 
       public void Execute(int index) {
         // Skip the corners of the array as those are already processed by previous cubes
@@ -220,7 +233,7 @@ namespace com.andycodesstuff {
             case 11: triangle.vertexC = vertex11; break;
           }
 
-          triangles.Enqueue(triangle);
+          triangles.AddNoResize(triangle);
         }
       }
     }
