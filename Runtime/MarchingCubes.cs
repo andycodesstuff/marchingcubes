@@ -1,7 +1,8 @@
 using UnityEngine;
+using Unity.Burst;
 using Unity.Collections;
 using Unity.Jobs;
-using Unity.Burst;
+using Unity.Mathematics;
 
 namespace com.andycodesstuff {
   /// <summary>
@@ -41,13 +42,13 @@ namespace com.andycodesstuff {
     /// <summary>
     ///   Run the marching cube algorithm and return the resulting polygonisation
     /// </summary>
-    public Triangle[] Polygonise(float[] density, float surfaceLevel, float gridSize) {
+    public Triangle[] Polygonise(float4[] density, float surfaceLevel, float gridSize) {
       // Compute the total number of density samples as well as the number of samples along each axis: since the
       // <c>density</c> array represents a cube, a 3D array with dimensions all equal, we can just take the cube root
       var samples = density.Length;
       var samplesPerAxis = (int) Mathf.Pow(samples, 1f / 3f);
 
-      var nativeDensity = new NativeArray<float>(samples, Allocator.TempJob);
+      var nativeDensity = new NativeArray<float4>(samples, Allocator.TempJob);
       nativeDensity.CopyFrom(density);
 
       // Compute the maximum number of triangles that could theoretically be produced from the given data (each cube/
@@ -87,21 +88,10 @@ namespace com.andycodesstuff {
     }
 
     /// <summary>
-    ///   Convert a point (3D value) to its index in the density array (1D value)
+    ///   Convert 3D coordinates to their respective index in the density array
     /// </summary>
-    public static int To1D(Vector3 point, int samplesPerAxis) {
-      return Mathf.RoundToInt(point.x * samplesPerAxis * samplesPerAxis + point.y * samplesPerAxis + point.z);
-    }
-
-    /// <summary>
-    ///   Convert a density array index (1D value) to its corresponding point in space (3D value)
-    /// </summary>
-    public static Vector3 To3D(int index, int samplesPerAxis) {
-      var x = index / (samplesPerAxis * samplesPerAxis);
-      var y = (index - x * samplesPerAxis * samplesPerAxis) / samplesPerAxis;
-      var z = index - x * samplesPerAxis * samplesPerAxis - y * samplesPerAxis;
-
-      return new Vector3(x, y, z);
+    public static int CoordsToIndex(int3 coord, int samplesPerAxis) {
+      return coord.x * samplesPerAxis * samplesPerAxis + coord.y * samplesPerAxis + coord.z;
     }
 
     /// <summary>
@@ -119,7 +109,7 @@ namespace com.andycodesstuff {
     [BurstCompile]
     private struct MarchJob : IJobParallelFor {
       [ReadOnly] public NativeArray<int> triangulationTable;
-      [ReadOnly] public NativeArray<float> density;
+      [ReadOnly] public NativeArray<float4> density;
       [ReadOnly] public float surfaceLevel;
       [ReadOnly] public int samplesPerAxis;
       [ReadOnly] public float gridSize;
@@ -128,29 +118,31 @@ namespace com.andycodesstuff {
       [WriteOnly] public NativeList<Triangle>.ParallelWriter triangles;
 
       public void Execute(int index) {
+        var coord = density[index].xyz;
+
         // Skip the corners of the array as those are already processed by previous cubes
         // (due to the fact that each cube has to process the neighbouring ones)
-        var point0 = To3D(index, samplesPerAxis) * gridSize;
+        var point0 = coord * gridSize;
         if (point0.x >= cornerCoords || point0.y >= cornerCoords || point0.z >= cornerCoords) return;
 
         // Neighbouring points
-        var point1 = point0 + new Vector3(gridSize,        0,        0);
-        var point2 = point0 + new Vector3(gridSize, gridSize,        0);
-        var point3 = point0 + new Vector3(       0, gridSize,        0);
-        var point4 = point0 + new Vector3(       0,        0, gridSize);
-        var point5 = point0 + new Vector3(gridSize,        0, gridSize);
-        var point6 = point0 + new Vector3(gridSize, gridSize, gridSize);
-        var point7 = point0 + new Vector3(       0, gridSize, gridSize);
+        var point1 = point0 + new float3(gridSize,        0,        0);
+        var point2 = point0 + new float3(gridSize, gridSize,        0);
+        var point3 = point0 + new float3(       0, gridSize,        0);
+        var point4 = point0 + new float3(       0,        0, gridSize);
+        var point5 = point0 + new float3(gridSize,        0, gridSize);
+        var point6 = point0 + new float3(gridSize, gridSize, gridSize);
+        var point7 = point0 + new float3(       0, gridSize, gridSize);
 
         // Neighbouring density samples
-        var density0 = density[To1D(point0 / gridSize, samplesPerAxis)];
-        var density1 = density[To1D(point1 / gridSize, samplesPerAxis)];
-        var density2 = density[To1D(point2 / gridSize, samplesPerAxis)];
-        var density3 = density[To1D(point3 / gridSize, samplesPerAxis)];
-        var density4 = density[To1D(point4 / gridSize, samplesPerAxis)];
-        var density5 = density[To1D(point5 / gridSize, samplesPerAxis)];
-        var density6 = density[To1D(point6 / gridSize, samplesPerAxis)];
-        var density7 = density[To1D(point7 / gridSize, samplesPerAxis)];
+        var density0 = density[CoordsToIndex((int3) (point0 / gridSize), samplesPerAxis)].w;
+        var density1 = density[CoordsToIndex((int3) (point1 / gridSize), samplesPerAxis)].w;
+        var density2 = density[CoordsToIndex((int3) (point2 / gridSize), samplesPerAxis)].w;
+        var density3 = density[CoordsToIndex((int3) (point3 / gridSize), samplesPerAxis)].w;
+        var density4 = density[CoordsToIndex((int3) (point4 / gridSize), samplesPerAxis)].w;
+        var density5 = density[CoordsToIndex((int3) (point5 / gridSize), samplesPerAxis)].w;
+        var density6 = density[CoordsToIndex((int3) (point6 / gridSize), samplesPerAxis)].w;
+        var density7 = density[CoordsToIndex((int3) (point7 / gridSize), samplesPerAxis)].w;
 
         // Find the index of the entry that corresponds to the given cube
         var cubeIndex = 0;
@@ -241,7 +233,7 @@ namespace com.andycodesstuff {
     /// <summary>
     ///   Interpolate between two density samples to yield a smoother result
     /// </summary>
-    private static Vector3 Interpolate(float surfaceLevel, Vector3 pointA, Vector3 pointB, float densityA, float densityB) {
+    private static float3 Interpolate(float surfaceLevel, float3 pointA, float3 pointB, float densityA, float densityB) {
       var t = (surfaceLevel - densityA) / (densityB - densityA);
       return pointA + t * (pointB - pointA);
     }
