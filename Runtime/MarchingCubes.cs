@@ -118,29 +118,29 @@ namespace com.andycodesstuff {
       public void Execute(int index) {
         // Skip the corners of the array as those are already processed by previous cubes
         // (due to the fact that each cube has to process the neighbouring ones)
-        var coord = density[index].xyz;
+        var coord = (int3) density[index].xyz;
         var cornerCoord = samplesPerAxis - 1;
         if (coord.x >= cornerCoord || coord.y >= cornerCoord || coord.z >= cornerCoord) return;
 
         // Neighbouring points
-        var point0 = coord * gridSize;
-        var point1 = point0 + new float3(gridSize,        0,        0);
-        var point2 = point0 + new float3(gridSize, gridSize,        0);
-        var point3 = point0 + new float3(       0, gridSize,        0);
-        var point4 = point0 + new float3(       0,        0, gridSize);
-        var point5 = point0 + new float3(gridSize,        0, gridSize);
-        var point6 = point0 + new float3(gridSize, gridSize, gridSize);
-        var point7 = point0 + new float3(       0, gridSize, gridSize);
+        var point0 = coord;
+        var point1 = coord + new int3(1, 0, 0);
+        var point2 = coord + new int3(1, 1, 0);
+        var point3 = coord + new int3(0, 1, 0);
+        var point4 = coord + new int3(0, 0, 1);
+        var point5 = coord + new int3(1, 0, 1);
+        var point6 = coord + new int3(1, 1, 1);
+        var point7 = coord + new int3(0, 1, 1);
 
         // Neighbouring density samples
-        var density0 = density[CoordsToIndex((int3) (point0 / gridSize), samplesPerAxis)].w;
-        var density1 = density[CoordsToIndex((int3) (point1 / gridSize), samplesPerAxis)].w;
-        var density2 = density[CoordsToIndex((int3) (point2 / gridSize), samplesPerAxis)].w;
-        var density3 = density[CoordsToIndex((int3) (point3 / gridSize), samplesPerAxis)].w;
-        var density4 = density[CoordsToIndex((int3) (point4 / gridSize), samplesPerAxis)].w;
-        var density5 = density[CoordsToIndex((int3) (point5 / gridSize), samplesPerAxis)].w;
-        var density6 = density[CoordsToIndex((int3) (point6 / gridSize), samplesPerAxis)].w;
-        var density7 = density[CoordsToIndex((int3) (point7 / gridSize), samplesPerAxis)].w;
+        var density0 = density[CoordsToIndex(point0, samplesPerAxis)].w;
+        var density1 = density[CoordsToIndex(point1, samplesPerAxis)].w;
+        var density2 = density[CoordsToIndex(point2, samplesPerAxis)].w;
+        var density3 = density[CoordsToIndex(point3, samplesPerAxis)].w;
+        var density4 = density[CoordsToIndex(point4, samplesPerAxis)].w;
+        var density5 = density[CoordsToIndex(point5, samplesPerAxis)].w;
+        var density6 = density[CoordsToIndex(point6, samplesPerAxis)].w;
+        var density7 = density[CoordsToIndex(point7, samplesPerAxis)].w;
 
         // Find the index of the entry that corresponds to the given cube
         var cubeIndex = 0;
@@ -154,18 +154,18 @@ namespace com.andycodesstuff {
         cubeIndex |= 128 * BoolToInt(density7 <= surfaceLevel);
 
         // Pre-compute vertices
-        var vertex0 = Interpolate(surfaceLevel, point0, point1, density0, density1);
-        var vertex1 = Interpolate(surfaceLevel, point1, point2, density1, density2);
-        var vertex2 = Interpolate(surfaceLevel, point2, point3, density2, density3);
-        var vertex3 = Interpolate(surfaceLevel, point3, point0, density3, density0);
-        var vertex4 = Interpolate(surfaceLevel, point4, point5, density4, density5);
-        var vertex5 = Interpolate(surfaceLevel, point5, point6, density5, density6);
-        var vertex6 = Interpolate(surfaceLevel, point6, point7, density6, density7);
-        var vertex7 = Interpolate(surfaceLevel, point7, point4, density7, density4);
-        var vertex8 = Interpolate(surfaceLevel, point0, point4, density0, density4);
-        var vertex9 = Interpolate(surfaceLevel, point1, point5, density1, density5);
-        var vertex10 = Interpolate(surfaceLevel, point2, point6, density2, density6);
-        var vertex11 = Interpolate(surfaceLevel, point3, point7, density3, density7);
+        var vertex0 = Interpolate(surfaceLevel, point0, point1, density0, density1) * gridSize;
+        var vertex1 = Interpolate(surfaceLevel, point1, point2, density1, density2) * gridSize;
+        var vertex2 = Interpolate(surfaceLevel, point2, point3, density2, density3) * gridSize;
+        var vertex3 = Interpolate(surfaceLevel, point3, point0, density3, density0) * gridSize;
+        var vertex4 = Interpolate(surfaceLevel, point4, point5, density4, density5) * gridSize;
+        var vertex5 = Interpolate(surfaceLevel, point5, point6, density5, density6) * gridSize;
+        var vertex6 = Interpolate(surfaceLevel, point6, point7, density6, density7) * gridSize;
+        var vertex7 = Interpolate(surfaceLevel, point7, point4, density7, density4) * gridSize;
+        var vertex8 = Interpolate(surfaceLevel, point0, point4, density0, density4) * gridSize;
+        var vertex9 = Interpolate(surfaceLevel, point1, point5, density1, density5) * gridSize;
+        var vertex10 = Interpolate(surfaceLevel, point2, point6, density2, density6) * gridSize;
+        var vertex11 = Interpolate(surfaceLevel, point3, point7, density3, density7) * gridSize;
 
         // Find the vertices where the surface intersects the cube
         // Note: using an array to hold pre-computed vertices is avoided in order to use the Burst compiler
