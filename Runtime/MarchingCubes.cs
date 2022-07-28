@@ -63,7 +63,6 @@ namespace com.andycodesstuff {
         surfaceLevel = surfaceLevel,
         samplesPerAxis = samplesPerAxis,
         gridSize = gridSize,
-        cornerCoords = (samplesPerAxis - 1) * gridSize,
         triangles = nativeTriangles.AsParallelWriter()
       };
 
@@ -113,19 +112,18 @@ namespace com.andycodesstuff {
       [ReadOnly] public float surfaceLevel;
       [ReadOnly] public int samplesPerAxis;
       [ReadOnly] public float gridSize;
-      [ReadOnly] public float cornerCoords;
 
       [WriteOnly] public NativeList<Triangle>.ParallelWriter triangles;
 
       public void Execute(int index) {
-        var coord = density[index].xyz;
-
         // Skip the corners of the array as those are already processed by previous cubes
         // (due to the fact that each cube has to process the neighbouring ones)
-        var point0 = coord * gridSize;
-        if (point0.x >= cornerCoords || point0.y >= cornerCoords || point0.z >= cornerCoords) return;
+        var coord = density[index].xyz;
+        var cornerCoord = samplesPerAxis - 1;
+        if (coord.x >= cornerCoord || coord.y >= cornerCoord || coord.z >= cornerCoord) return;
 
         // Neighbouring points
+        var point0 = coord * gridSize;
         var point1 = point0 + new float3(gridSize,        0,        0);
         var point2 = point0 + new float3(gridSize, gridSize,        0);
         var point3 = point0 + new float3(       0, gridSize,        0);
