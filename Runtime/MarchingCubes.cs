@@ -3,6 +3,7 @@ using Unity.Burst;
 using Unity.Collections;
 using Unity.Jobs;
 using Unity.Mathematics;
+using Unity.Profiling;
 
 namespace com.andycodesstuff {
   /// <summary>
@@ -15,6 +16,7 @@ namespace com.andycodesstuff {
   ///   </list>
   /// </summary>
   public class MarchingCubes {
+    private static readonly ProfilerMarker m_PerfMarker = new ProfilerMarker("MarchJob");
     private NativeArray<int> m_NativeTriangulationTable;
 
     /// <summary>
@@ -63,6 +65,7 @@ namespace com.andycodesstuff {
         surfaceLevel = surfaceLevel,
         samplesPerAxis = samplesPerAxis,
         gridSize = gridSize,
+        perfMarker = m_PerfMarker,
         triangles = nativeTriangles.AsParallelWriter()
       };
 
@@ -115,118 +118,121 @@ namespace com.andycodesstuff {
       [ReadOnly] public float surfaceLevel;
       [ReadOnly] public int samplesPerAxis;
       [ReadOnly] public float gridSize;
+      [ReadOnly] public ProfilerMarker perfMarker;
 
       [WriteOnly] public NativeList<Triangle>.ParallelWriter triangles;
 
       public void Execute(int index) {
-        // Skip the corners of the array as those are already processed by previous cubes
-        // (due to the fact that each cube has to process the neighbouring ones)
-        var coord = (int3) density[index].xyz;
-        var cornerCoord = samplesPerAxis - 1;
-        if (coord.x >= cornerCoord || coord.y >= cornerCoord || coord.z >= cornerCoord) return;
+        using (perfMarker.Auto()) {
+          // Skip the corners of the array as those are already processed by previous cubes
+          // (due to the fact that each cube has to process the neighbouring ones)
+          var coord = (int3) density[index].xyz;
+          var cornerCoord = samplesPerAxis - 1;
+          if (coord.x >= cornerCoord || coord.y >= cornerCoord || coord.z >= cornerCoord) return;
 
-        // Neighbouring points
-        var point0 = coord;
-        var point1 = coord + new int3(1, 0, 0);
-        var point2 = coord + new int3(1, 1, 0);
-        var point3 = coord + new int3(0, 1, 0);
-        var point4 = coord + new int3(0, 0, 1);
-        var point5 = coord + new int3(1, 0, 1);
-        var point6 = coord + new int3(1, 1, 1);
-        var point7 = coord + new int3(0, 1, 1);
+          // Neighbouring points
+          var point0 = coord;
+          var point1 = coord + new int3(1, 0, 0);
+          var point2 = coord + new int3(1, 1, 0);
+          var point3 = coord + new int3(0, 1, 0);
+          var point4 = coord + new int3(0, 0, 1);
+          var point5 = coord + new int3(1, 0, 1);
+          var point6 = coord + new int3(1, 1, 1);
+          var point7 = coord + new int3(0, 1, 1);
 
-        // Neighbouring density samples
-        var density0 = SampleDensity(point0);
-        var density1 = SampleDensity(point1);
-        var density2 = SampleDensity(point2);
-        var density3 = SampleDensity(point3);
-        var density4 = SampleDensity(point4);
-        var density5 = SampleDensity(point5);
-        var density6 = SampleDensity(point6);
-        var density7 = SampleDensity(point7);
+          // Neighbouring density samples
+          var density0 = SampleDensity(point0);
+          var density1 = SampleDensity(point1);
+          var density2 = SampleDensity(point2);
+          var density3 = SampleDensity(point3);
+          var density4 = SampleDensity(point4);
+          var density5 = SampleDensity(point5);
+          var density6 = SampleDensity(point6);
+          var density7 = SampleDensity(point7);
 
-        // Find the index of the entry that corresponds to the given cube
-        var cubeIndex = 0;
-        cubeIndex |= 1 * BoolToInt(density0 <= surfaceLevel);
-        cubeIndex |= 2 * BoolToInt(density1 <= surfaceLevel);
-        cubeIndex |= 4 * BoolToInt(density2 <= surfaceLevel);
-        cubeIndex |= 8 * BoolToInt(density3 <= surfaceLevel);
-        cubeIndex |= 16 * BoolToInt(density4 <= surfaceLevel);
-        cubeIndex |= 32 * BoolToInt(density5 <= surfaceLevel);
-        cubeIndex |= 64 * BoolToInt(density6 <= surfaceLevel);
-        cubeIndex |= 128 * BoolToInt(density7 <= surfaceLevel);
+          // Find the index of the entry that corresponds to the given cube
+          var cubeIndex = 0;
+          cubeIndex |= 1 * BoolToInt(density0 <= surfaceLevel);
+          cubeIndex |= 2 * BoolToInt(density1 <= surfaceLevel);
+          cubeIndex |= 4 * BoolToInt(density2 <= surfaceLevel);
+          cubeIndex |= 8 * BoolToInt(density3 <= surfaceLevel);
+          cubeIndex |= 16 * BoolToInt(density4 <= surfaceLevel);
+          cubeIndex |= 32 * BoolToInt(density5 <= surfaceLevel);
+          cubeIndex |= 64 * BoolToInt(density6 <= surfaceLevel);
+          cubeIndex |= 128 * BoolToInt(density7 <= surfaceLevel);
 
-        // Pre-compute vertices
-        var (vertex0, normal0) = Interpolate(surfaceLevel, point0, point1, density0, density1);
-        var (vertex1, normal1) = Interpolate(surfaceLevel, point1, point2, density1, density2);
-        var (vertex2, normal2) = Interpolate(surfaceLevel, point2, point3, density2, density3);
-        var (vertex3, normal3) = Interpolate(surfaceLevel, point3, point0, density3, density0);
-        var (vertex4, normal4) = Interpolate(surfaceLevel, point4, point5, density4, density5);
-        var (vertex5, normal5) = Interpolate(surfaceLevel, point5, point6, density5, density6);
-        var (vertex6, normal6) = Interpolate(surfaceLevel, point6, point7, density6, density7);
-        var (vertex7, normal7) = Interpolate(surfaceLevel, point7, point4, density7, density4);
-        var (vertex8, normal8) = Interpolate(surfaceLevel, point0, point4, density0, density4);
-        var (vertex9, normal9) = Interpolate(surfaceLevel, point1, point5, density1, density5);
-        var (vertex10, normal10) = Interpolate(surfaceLevel, point2, point6, density2, density6);
-        var (vertex11, normal11) = Interpolate(surfaceLevel, point3, point7, density3, density7);
+          // Pre-compute vertices
+          var (vertex0, normal0) = Interpolate(surfaceLevel, point0, point1, density0, density1);
+          var (vertex1, normal1) = Interpolate(surfaceLevel, point1, point2, density1, density2);
+          var (vertex2, normal2) = Interpolate(surfaceLevel, point2, point3, density2, density3);
+          var (vertex3, normal3) = Interpolate(surfaceLevel, point3, point0, density3, density0);
+          var (vertex4, normal4) = Interpolate(surfaceLevel, point4, point5, density4, density5);
+          var (vertex5, normal5) = Interpolate(surfaceLevel, point5, point6, density5, density6);
+          var (vertex6, normal6) = Interpolate(surfaceLevel, point6, point7, density6, density7);
+          var (vertex7, normal7) = Interpolate(surfaceLevel, point7, point4, density7, density4);
+          var (vertex8, normal8) = Interpolate(surfaceLevel, point0, point4, density0, density4);
+          var (vertex9, normal9) = Interpolate(surfaceLevel, point1, point5, density1, density5);
+          var (vertex10, normal10) = Interpolate(surfaceLevel, point2, point6, density2, density6);
+          var (vertex11, normal11) = Interpolate(surfaceLevel, point3, point7, density3, density7);
 
-        // Find the vertices where the surface intersects the cube
-        // Note: using an array to hold pre-computed vertices is avoided in order to use the Burst compiler
-        for (var i = 0; triangulationTable[i + cubeIndex * 16] != -1; i += 3) {
-          var triangle = new Triangle();
+          // Find the vertices where the surface intersects the cube
+          // Note: using an array to hold pre-computed vertices is avoided in order to use the Burst compiler
+          for (var i = 0; triangulationTable[i + cubeIndex * 16] != -1; i += 3) {
+            var triangle = new Triangle();
 
-          // Vertex A
-          var edge = triangulationTable[i + cubeIndex * 16];
-          switch (edge) {
-            case 0: triangle.vertexA = vertex0; triangle.normalA = normal0; break;
-            case 1: triangle.vertexA = vertex1; triangle.normalA = normal1; break;
-            case 2: triangle.vertexA = vertex2; triangle.normalA = normal2; break;
-            case 3: triangle.vertexA = vertex3; triangle.normalA = normal3; break;
-            case 4: triangle.vertexA = vertex4; triangle.normalA = normal4; break;
-            case 5: triangle.vertexA = vertex5; triangle.normalA = normal5; break;
-            case 6: triangle.vertexA = vertex6; triangle.normalA = normal6; break;
-            case 7: triangle.vertexA = vertex7; triangle.normalA = normal7; break;
-            case 8: triangle.vertexA = vertex8; triangle.normalA = normal8; break;
-            case 9: triangle.vertexA = vertex9; triangle.normalA = normal9; break;
-            case 10: triangle.vertexA = vertex10; triangle.normalA = normal10; break;
-            case 11: triangle.vertexA = vertex11; triangle.normalA = normal11; break;
+            // Vertex A
+            var edge = triangulationTable[i + cubeIndex * 16];
+            switch (edge) {
+              case 0: triangle.vertexA = vertex0; triangle.normalA = normal0; break;
+              case 1: triangle.vertexA = vertex1; triangle.normalA = normal1; break;
+              case 2: triangle.vertexA = vertex2; triangle.normalA = normal2; break;
+              case 3: triangle.vertexA = vertex3; triangle.normalA = normal3; break;
+              case 4: triangle.vertexA = vertex4; triangle.normalA = normal4; break;
+              case 5: triangle.vertexA = vertex5; triangle.normalA = normal5; break;
+              case 6: triangle.vertexA = vertex6; triangle.normalA = normal6; break;
+              case 7: triangle.vertexA = vertex7; triangle.normalA = normal7; break;
+              case 8: triangle.vertexA = vertex8; triangle.normalA = normal8; break;
+              case 9: triangle.vertexA = vertex9; triangle.normalA = normal9; break;
+              case 10: triangle.vertexA = vertex10; triangle.normalA = normal10; break;
+              case 11: triangle.vertexA = vertex11; triangle.normalA = normal11; break;
+            }
+
+            // Vertex B
+            edge = triangulationTable[i + 1 + cubeIndex * 16];
+            switch (edge) {
+              case 0: triangle.vertexB = vertex0; triangle.normalB = normal0; break;
+              case 1: triangle.vertexB = vertex1; triangle.normalB = normal1; break;
+              case 2: triangle.vertexB = vertex2; triangle.normalB = normal2; break;
+              case 3: triangle.vertexB = vertex3; triangle.normalB = normal3; break;
+              case 4: triangle.vertexB = vertex4; triangle.normalB = normal4; break;
+              case 5: triangle.vertexB = vertex5; triangle.normalB = normal5; break;
+              case 6: triangle.vertexB = vertex6; triangle.normalB = normal6; break;
+              case 7: triangle.vertexB = vertex7; triangle.normalB = normal7; break;
+              case 8: triangle.vertexB = vertex8; triangle.normalB = normal8; break;
+              case 9: triangle.vertexB = vertex9; triangle.normalB = normal9; break;
+              case 10: triangle.vertexB = vertex10; triangle.normalB = normal10; break;
+              case 11: triangle.vertexB = vertex11; triangle.normalB = normal11; break;
+            }
+
+            // Vertex C
+            edge = triangulationTable[i + 2 + cubeIndex * 16];
+            switch (edge) {
+              case 0: triangle.vertexC = vertex0; triangle.normalC = normal0; break;
+              case 1: triangle.vertexC = vertex1; triangle.normalC = normal1; break;
+              case 2: triangle.vertexC = vertex2; triangle.normalC = normal2; break;
+              case 3: triangle.vertexC = vertex3; triangle.normalC = normal3; break;
+              case 4: triangle.vertexC = vertex4; triangle.normalC = normal4; break;
+              case 5: triangle.vertexC = vertex5; triangle.normalC = normal5; break;
+              case 6: triangle.vertexC = vertex6; triangle.normalC = normal6; break;
+              case 7: triangle.vertexC = vertex7; triangle.normalC = normal7; break;
+              case 8: triangle.vertexC = vertex8; triangle.normalC = normal8; break;
+              case 9: triangle.vertexC = vertex9; triangle.normalC = normal9; break;
+              case 10: triangle.vertexC = vertex10; triangle.normalC = normal10; break;
+              case 11: triangle.vertexC = vertex11; triangle.normalC = normal11; break;
+            }
+
+            triangles.AddNoResize(triangle);
           }
-
-          // Vertex B
-          edge = triangulationTable[i + 1 + cubeIndex * 16];
-          switch (edge) {
-            case 0: triangle.vertexB = vertex0; triangle.normalB = normal0; break;
-            case 1: triangle.vertexB = vertex1; triangle.normalB = normal1; break;
-            case 2: triangle.vertexB = vertex2; triangle.normalB = normal2; break;
-            case 3: triangle.vertexB = vertex3; triangle.normalB = normal3; break;
-            case 4: triangle.vertexB = vertex4; triangle.normalB = normal4; break;
-            case 5: triangle.vertexB = vertex5; triangle.normalB = normal5; break;
-            case 6: triangle.vertexB = vertex6; triangle.normalB = normal6; break;
-            case 7: triangle.vertexB = vertex7; triangle.normalB = normal7; break;
-            case 8: triangle.vertexB = vertex8; triangle.normalB = normal8; break;
-            case 9: triangle.vertexB = vertex9; triangle.normalB = normal9; break;
-            case 10: triangle.vertexB = vertex10; triangle.normalB = normal10; break;
-            case 11: triangle.vertexB = vertex11; triangle.normalB = normal11; break;
-          }
-
-          // Vertex C
-          edge = triangulationTable[i + 2 + cubeIndex * 16];
-          switch (edge) {
-            case 0: triangle.vertexC = vertex0; triangle.normalC = normal0; break;
-            case 1: triangle.vertexC = vertex1; triangle.normalC = normal1; break;
-            case 2: triangle.vertexC = vertex2; triangle.normalC = normal2; break;
-            case 3: triangle.vertexC = vertex3; triangle.normalC = normal3; break;
-            case 4: triangle.vertexC = vertex4; triangle.normalC = normal4; break;
-            case 5: triangle.vertexC = vertex5; triangle.normalC = normal5; break;
-            case 6: triangle.vertexC = vertex6; triangle.normalC = normal6; break;
-            case 7: triangle.vertexC = vertex7; triangle.normalC = normal7; break;
-            case 8: triangle.vertexC = vertex8; triangle.normalC = normal8; break;
-            case 9: triangle.vertexC = vertex9; triangle.normalC = normal9; break;
-            case 10: triangle.vertexC = vertex10; triangle.normalC = normal10; break;
-            case 11: triangle.vertexC = vertex11; triangle.normalC = normal11; break;
-          }
-
-          triangles.AddNoResize(triangle);
         }
       }
 
