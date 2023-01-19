@@ -1,0 +1,141 @@
+#pragma kernel CSMain
+#include "/Includes/MarchingCubesTables.compute"
+
+/**
+ * Represent a single triangle produced by the marching cubes algorithm
+ */
+struct Triangle {
+  float3 vertexA;
+  float3 normalA;
+  float3 vertexB;
+  float3 normalB;
+  float3 vertexC;
+  float3 normalC;
+};
+
+StructuredBuffer<float> Density;
+float SurfaceLevel;
+int SamplesPerAxis;
+float GridSize;
+
+AppendStructuredBuffer<Triangle> Triangles;
+
+/**
+ * Convert 3D coordinates to their respective index in the density array
+ */
+int coordsToIndex(int3 coord) {
+  return coord.x * SamplesPerAxis * SamplesPerAxis + coord.y * SamplesPerAxis + coord.z;
+}
+
+/**
+ * Sample density value
+ */
+float sampleDensity(int3 coord) {
+  // Constrain the coordinate to be within the bounds of the array
+  int cornerCoord = SamplesPerAxis - 1;
+  int index = coordsToIndex(max(0, min(coord, cornerCoord)));
+
+  return Density[index];
+}
+
+/**
+ * Convert a boolean expression to an integer, true expressions evaluate to 1 while false ones evaluate to 0
+ */
+int boolToInt(bool expression) {
+  return expression ? 1 : 0;
+}
+
+/**
+ * Create a vertex by interpolating between two density samples to yield a smoother result
+ */
+void createVertex(float surfaceLevel, int3 coordA, int3 coordB, float densityA, float densityB, out float3 vertex, out float3 normal) {
+  float t = (surfaceLevel - densityA) / (densityB - densityA);
+  int3 offsetX = int3(1, 0, 0);
+  int3 offsetY = int3(0, 1, 0);
+  int3 offsetZ = int3(0, 0, 1);
+
+  // Vertex calculation
+  vertex = coordA + t * (coordB - coordA);
+  vertex *= GridSize;
+
+  // Normal A
+  float dxA = sampleDensity(coordA + offsetX) - sampleDensity(coordA - offsetX);
+  float dyA = sampleDensity(coordA + offsetY) - sampleDensity(coordA - offsetY);
+  float dzA = sampleDensity(coordA + offsetZ) - sampleDensity(coordA - offsetZ);
+  float3 normalA = normalize(float3(dxA, dyA, dzA));
+
+  // Normal B
+  float dxB = sampleDensity(coordB + offsetX) - sampleDensity(coordB - offsetX);
+  float dyB = sampleDensity(coordB + offsetY) - sampleDensity(coordB - offsetY);
+  float dzB = sampleDensity(coordB + offsetZ) - sampleDensity(coordB - offsetZ);
+  float3 normalB = normalize(float3(dxB, dyB, dzB));
+
+  // Normal calculation
+  normal = normalA + t * (normalB - normalA);
+}
+
+[numthreads(8,8,8)]
+void CSMain (int3 coord : SV_DispatchThreadID) {
+  // Skip the corners of the array as those are already processed by previous cubes
+  // (due to the fact that each cube has to process the neighbouring ones)
+  int cornerCoord = SamplesPerAxis - 1;
+  if (coord.x >= cornerCoord || coord.y >= cornerCoord || coord.z >= cornerCoord) return;
+
+  // Neighbouring points
+  int3 points[8];
+  points[0] = coord;
+  points[1] = coord + int3(1, 0, 0);
+  points[2] = coord + int3(1, 1, 0);
+  points[3] = coord + int3(0, 1, 0);
+  points[4] = coord + int3(0, 0, 1);
+  points[5] = coord + int3(1, 0, 1);
+  points[6] = coord + int3(1, 1, 1);
+  points[7] = coord + int3(0, 1, 1);
+
+  // Neighbouring density samples
+  float density[8];
+  density[0] = sampleDensity(points[0]);
+  density[1] = sampleDensity(points[1]);
+  density[2] = sampleDensity(points[2]);
+  density[3] = sampleDensity(points[3]);
+  density[4] = sampleDensity(points[4]);
+  density[5] = sampleDensity(points[5]);
+  density[6] = sampleDensity(points[6]);
+  density[7] = sampleDensity(points[7]);
+
+  // Find the index of the entry that corresponds to the given cube
+  int cubeIndex = 0;
+  cubeIndex |= 1 * boolToInt(density[0] <= SurfaceLevel);
+  cubeIndex |= 2 * boolToInt(density[1] <= SurfaceLevel);
+  cubeIndex |= 4 * boolToInt(density[2] <= SurfaceLevel);
+  cubeIndex |= 8 * boolToInt(density[3] <= SurfaceLevel);
+  cubeIndex |= 16 * boolToInt(density[4] <= SurfaceLevel);
+  cubeIndex |= 32 * boolToInt(density[5] <= SurfaceLevel);
+  cubeIndex |= 64 * boolToInt(density[6] <= SurfaceLevel);
+  cubeIndex |= 128 * boolToInt(density[7] <= SurfaceLevel);
+
+  // Find the vertices where the surface intersects the cube
+
+  // Create the necessary triangles
+  for (int i = 0; TRIANGULATION_TABLE[cubeIndex][i] != -1; i += 3) {
+    Triangle tri;
+
+    int edgeIndexA = TRIANGULATION_TABLE[cubeIndex][i];
+    int cornerA0 = CORNER_A_FROM_EDGE_INDEX[edgeIndexA];
+    int cornerA1 = CORNER_B_FROM_EDGE_INDEX[edgeIndexA];
+
+    int edgeIndexB = TRIANGULATION_TABLE[cubeIndex][i + 1];
+    int cornerB0 = CORNER_A_FROM_EDGE_INDEX[edgeIndexB];
+    int cornerB1 = CORNER_B_FROM_EDGE_INDEX[edgeIndexB];
+
+    int edgeIndexC = TRIANGULATION_TABLE[cubeIndex][i + 2];
+    int cornerC0 = CORNER_A_FROM_EDGE_INDEX[edgeIndexC];
+    int cornerC1 = CORNER_B_FROM_EDGE_INDEX[edgeIndexC];
+
+    createVertex(SurfaceLevel, points[cornerA0], points[cornerA1], density[cornerA0], density[cornerA1], tri.vertexA, tri.normalA);
+    createVertex(SurfaceLevel, points[cornerB0], points[cornerB1], density[cornerB0], density[cornerB1], tri.vertexB, tri.normalB);
+    createVertex(SurfaceLevel, points[cornerC0], points[cornerC1], density[cornerC0], density[cornerC1], tri.vertexC, tri.normalC);
+
+    Triangles.Append(tri);
+  }
+}
